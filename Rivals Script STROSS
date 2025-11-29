@@ -1,0 +1,257 @@
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local LocalPlayer = Players.LocalPlayer
+local Camera = workspace.CurrentCamera
+
+-- SETTINGS
+local SETTINGS = {
+ESP_ENABLED = true,
+TARGET_HIGHLIGHT = true,
+NAME_HP_UI = true,
+SHOW_TARGET_NAME = true,
+AIMBOT = true,
+AUTO_SELECT = true,
+PREDICTION = true,
+TARGET_SMOOTHNESS = 0.15,
+PREDICTION_STRENGTH = 0.25,
+MAX_RANGE = 300,
+ESP_COLOR = Color3.fromRGB(0,255,0),
+TARGET_COLOR = Color3.fromRGB(255,0,0),
+OUTLINE_COLOR = Color3.fromRGB(255,255,255),
+SHOW_FPS = true
+}
+
+local CurrentTarget = nil
+local Connections = {}
+
+-- UTILITY
+local function getMagnitude(a,b)
+return (a - b).Magnitude
+end
+
+local function predictPosition(hrp)
+return hrp.Position + (hrp.Velocity * SETTINGS.PREDICTION_STRENGTH)
+end
+
+local function smoothCamera(targetPos)
+Camera.CFrame = Camera.CFrame:Lerp(
+CFrame.new(Camera.CFrame.Position, targetPos),
+SETTINGS.TARGET_SMOOTHNESS
+)
+end
+
+-- CREATE ESP & UI
+local function createESP(character)
+if character:FindFirstChild("ULTRA_HIGHLIGHT") then
+return character.ULTRA_HIGHLIGHT
+end
+local hl = Instance.new("Highlight")
+hl.Name = "ULTRA_HIGHLIGHT"
+hl.FillColor = SETTINGS.ESP_COLOR
+hl.OutlineColor = SETTINGS.OUTLINE_COLOR
+hl.FillTransparency = 0.5
+hl.OutlineTransparency = 1
+hl.Parent = character
+return hl
+end
+
+local function createInfoUI(character)
+local head = character:WaitForChild("Head")
+local gui = Instance.new("BillboardGui")
+gui.Name = "ULTRA_INFO"
+gui.Size = UDim2.new(5,0,1.5,0)
+gui.AlwaysOnTop = true
+gui.Adornee = head
+gui.StudsOffset = Vector3.new(0,2.5,0)
+gui.Parent = character
+
+local text = Instance.new("TextLabel")
+text.BackgroundTransparency = 1
+text.Font = Enum.Font.GothamBold
+text.TextColor3 = Color3.new(1,1,1)
+text.TextScaled = true
+text.Size = UDim2.new(1,0,1,0)
+text.Parent = gui
+
+return text
+
+end
+
+-- CREATE UI MENU
+local ScreenGui = Instance.new("ScreenGui", LocalPlayer:WaitForChild("PlayerGui"))
+ScreenGui.Name = "UltraSystemHUD"
+ScreenGui.Enabled = false
+
+local Frame = Instance.new("Frame", ScreenGui)
+Frame.Size = UDim2.new(0, 200, 0, 500)
+Frame.Position = UDim2.new(0,20,0,100)
+Frame.BackgroundColor3 = Color3.fromRGB(30,30,30)
+Frame.BorderSizePixel = 0
+Frame.Active = true
+Frame.Draggable = true
+
+local NameLabel = Instance.new("TextLabel", Frame)
+NameLabel.Size = UDim2.new(1,0,0,30)
+NameLabel.Position = UDim2.new(0,0,0,0)
+NameLabel.BackgroundTransparency = 1
+NameLabel.Text = "Rosales Ultra System"
+NameLabel.Font = Enum.Font.GothamBold
+NameLabel.TextScaled = true
+NameLabel.TextColor3 = Color3.fromRGB(255,255,255)
+
+local UIList = Instance.new("UIListLayout", Frame)
+UIList.Padding = UDim.new(0,5)
+UIList.SortOrder = Enum.SortOrder.LayoutOrder
+
+-- Helper to create toggle buttons
+local function CreateButton(name, settingKey)
+local b = Instance.new("TextButton")
+b.Size = UDim2.new(1,-10,0,35)
+b.BackgroundColor3 = Color3.fromRGB(50,50,50)
+b.TextColor3 = Color3.fromRGB(255,255,255)
+b.Font = Enum.Font.GothamBold
+b.TextSize = 14
+b.Text = name .. ": ON"
+b.Parent = Frame
+
+b.MouseButton1Click:Connect(function()
+    SETTINGS[settingKey] = not SETTINGS[settingKey]
+    b.Text = name .. ": " .. (SETTINGS[settingKey] and "ON" or "OFF")
+end)
+
+return b
+
+end
+
+-- Feature buttons
+CreateButton("ESP", "ESP_ENABLED")
+CreateButton("Target Highlight", "TARGET_HIGHLIGHT")
+CreateButton("Name+HP UI", "NAME_HP_UI")
+CreateButton("Target Name", "SHOW_TARGET_NAME")
+CreateButton("Aimbot", "AIMBOT")
+CreateButton("Auto Select", "AUTO_SELECT")
+CreateButton("Prediction", "PREDICTION")
+
+-- FPS floating label (always visible, top-left corner)
+local fpsGui = Instance.new("ScreenGui", LocalPlayer:WaitForChild("PlayerGui"))
+fpsGui.Name = "UltraFPSHUD"
+local fpsLabel = Instance.new("TextLabel", fpsGui)
+fpsLabel.Size = UDim2.new(0, 80, 0, 20)
+fpsLabel.Position = UDim2.new(0,5,0,5)
+fpsLabel.BackgroundTransparency = 1
+fpsLabel.Font = Enum.Font.GothamBold
+fpsLabel.TextColor3 = Color3.fromRGB(255,255,0)
+fpsLabel.TextScaled = false
+fpsLabel.TextSize = 14
+fpsLabel.Text = "FPS: 0"
+fpsLabel.TextStrokeTransparency = 0.6
+
+local lastTime = tick()
+RunService.RenderStepped:Connect(function()
+if SETTINGS.SHOW_FPS then
+local now = tick()
+local dt = now - lastTime
+lastTime = now
+fpsLabel.Text = "FPS: " .. math.floor(1/dt)
+else
+fpsLabel.Text = ""
+end
+end)
+
+-- RIGHT SHIFT TO TOGGLE MENU
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+if input.KeyCode == Enum.KeyCode.RightShift then
+ScreenGui.Enabled = not ScreenGui.Enabled
+end
+end)
+
+-- AUTO-TARGETING & APPLY TRACKING
+local function getClosestEnemy()
+local lpChar = LocalPlayer.Character
+if not lpChar or not lpChar:FindFirstChild("HumanoidRootPart") then return nil end
+
+local closest = nil
+local shortest = math.huge
+
+for _, plr in ipairs(Players:GetPlayers()) do
+    if plr ~= LocalPlayer and plr.Team ~= LocalPlayer.Team then
+        local char = plr.Character
+        if char and char:FindFirstChild("HumanoidRootPart") then
+            local hrp = char.HumanoidRootPart
+            local dist = getMagnitude(lpChar.HumanoidRootPart.Position, hrp.Position)
+            if dist < shortest and dist <= SETTINGS.MAX_RANGE then
+                shortest = dist
+                closest = plr
+            end
+        end
+    end
+end
+
+return closest
+
+end
+
+local function applyTracking(player)
+if player == LocalPlayer then return end
+
+local function setupCharacter(char)
+    local humanoid = char:WaitForChild("Humanoid")
+    local hrp = char:WaitForChild("HumanoidRootPart")
+
+    local highlight = createESP(char)
+    local uiText = createInfoUI(char)
+
+    local conn
+    conn = RunService.RenderStepped:Connect(function()
+        if not char.Parent or humanoid.Health <= 0 then
+            if Connections[char] then Connections[char]:Disconnect() end
+            Connections[char] = nil
+            return
+        end
+
+        -- Auto Target
+        if SETTINGS.AUTO_SELECT then
+            CurrentTarget = getClosestEnemy()
+        end
+
+        -- Highlight
+        if SETTINGS.ESP_ENABLED then
+            highlight.FillColor = (CurrentTarget == player and SETTINGS.TARGET_COLOR or SETTINGS.ESP_COLOR)
+            highlight.OutlineTransparency = (SETTINGS.TARGET_HIGHLIGHT and CurrentTarget == player and 0 or 1)
+        else
+            highlight.FillColor = SETTINGS.ESP_COLOR
+            highlight.OutlineTransparency = 1
+        end
+
+        -- Name + HP UI and Target Name
+        local dist = getMagnitude(LocalPlayer.Character.HumanoidRootPart.Position, hrp.Position)
+        local textParts = {}
+        if SETTINGS.NAME_HP_UI then
+            table.insert(textParts, player.Name .. "\nHP: "..math.floor(humanoid.Health).."\nDist: "..math.floor(dist))
+        end
+        if SETTINGS.SHOW_TARGET_NAME and CurrentTarget == player then
+            table.insert(textParts, player.Name)
+        end
+        uiText.Text = table.concat(textParts, "\n")
+
+        -- Aimbot
+        if SETTINGS.AIMBOT and CurrentTarget == player and hrp then
+            local targetPos = SETTINGS.PREDICTION and predictPosition(hrp) or hrp.Position
+            smoothCamera(targetPos)
+        end
+    end)
+
+    Connections[char] = conn
+end
+
+player.CharacterAdded:Connect(setupCharacter)
+if player.Character then setupCharacter(player.Character) end
+
+end
+
+-- Apply tracking to all players
+for _, plr in ipairs(Players:GetPlayers()) do
+applyTracking(plr)
+end
+Players.PlayerAdded:Connect(applyTracking)
