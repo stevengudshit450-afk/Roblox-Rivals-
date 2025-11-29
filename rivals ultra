@@ -1,0 +1,137 @@
+-- UI ELEMENTS
+local frame = script.Parent
+local autoDodgeBtn = frame.AutoDodgeBtn
+local healthBarsBtn = frame.HealthBarsBtn
+local trackingBtn = frame.EnemyTrackingBtn
+
+-- FEATURE STATES
+local autoDodge = false
+local healthBars = false
+local enemyTracking = false
+
+--------------------------------------------------------
+-- AUTO DODGE SYSTEM
+--------------------------------------------------------
+local function EnableAutoDodge()
+    autoDodge = true
+    print("[UltraSystem] Auto-Dodge ON")
+
+    while autoDodge do
+        task.wait(0.1)
+        for _, enemy in pairs(workspace.Enemies:GetChildren()) do
+            if enemy:FindFirstChild("HumanoidRootPart") then
+                local dist = (enemy.HumanoidRootPart.Position - game.Players.LocalPlayer.Character.HumanoidRootPart.Position).Magnitude
+
+                if dist < 12 then
+                    local char = game.Players.LocalPlayer.Character
+                    if char and char:FindFirstChild("HumanoidRootPart") then
+                        char.HumanoidRootPart.CFrame *= CFrame.new(3, 0, 0)
+                    end
+                end
+            end
+        end
+    end
+end
+
+local function DisableAutoDodge()
+    autoDodge = false
+    print("[UltraSystem] Auto-Dodge OFF")
+end
+
+--------------------------------------------------------
+-- ENEMY HEALTH BARS
+--------------------------------------------------------
+local function EnableHealthBars()
+    healthBars = true
+    print("[UltraSystem] Health Bars ON")
+
+    for _, enemy in pairs(workspace.Enemies:GetChildren()) do
+        if enemy:FindFirstChild("Humanoid") and not enemy:FindFirstChild("HealthBar") then
+            
+            local billboard = Instance.new("BillboardGui")
+            billboard.Name = "HealthBar"
+            billboard.Size = UDim2.new(4,0,1,0)
+            billboard.AlwaysOnTop = true
+            billboard.Parent = enemy
+
+            local bar = Instance.new("Frame")
+            bar.BackgroundColor3 = Color3.new(1,0,0)
+            bar.Size = UDim2.new(1,0,0.2,0)
+            bar.Position = UDim2.new(0,0,0,0)
+            bar.Parent = billboard
+
+            enemy.Humanoid.HealthChanged:Connect(function(h)
+                bar.Size = UDim2.new(h/enemy.Humanoid.MaxHealth, 0, 0.2, 0)
+            end)
+        end
+    end
+end
+
+local function DisableHealthBars()
+    healthBars = false
+    print("[UltraSystem] Health Bars OFF")
+
+    for _, enemy in pairs(workspace.Enemies:GetChildren()) do
+        local hb = enemy:FindFirstChild("HealthBar")
+        if hb then hb:Destroy() end
+    end
+end
+
+--------------------------------------------------------
+-- ENEMY TRACKING SYSTEM (NPC follows player)
+--------------------------------------------------------
+local function EnableTracking()
+    enemyTracking = true
+    print("[UltraSystem] Enemy Tracking ON")
+
+    while enemyTracking do
+        task.wait(0.2)
+        local player = game.Players.LocalPlayer
+        local char = player.Character
+        if not char then continue end
+
+        for _, enemy in pairs(workspace.Enemies:GetChildren()) do
+            if enemy:FindFirstChild("Humanoid") and enemy:FindFirstChild("HumanoidRootPart") then
+                enemy.Humanoid:MoveTo(char.HumanoidRootPart.Position)
+            end
+        end
+    end
+end
+
+local function DisableTracking()
+    enemyTracking = false
+    print("[UltraSystem] Enemy Tracking OFF")
+end
+
+--------------------------------------------------------
+-- BUTTON CONTROL HANDLERS
+--------------------------------------------------------
+autoDodgeBtn.MouseButton1Click:Connect(function()
+    if not autoDodge then
+        autoDodgeBtn.Text = "Auto Dodge: ON"
+        EnableAutoDodge()
+    else
+        autoDodgeBtn.Text = "Auto Dodge: OFF"
+        DisableAutoDodge()
+    end
+end)
+
+healthBarsBtn.MouseButton1Click:Connect(function()
+    if not healthBars then
+        healthBarsBtn.Text = "Health Bars: ON"
+        EnableHealthBars()
+    else
+        healthBarsBtn.Text = "Health Bars: OFF"
+        DisableHealthBars()
+    end
+end)
+
+trackingBtn.MouseButton1Click:Connect(function()
+    if not enemyTracking then
+        trackingBtn.Text = "Tracking: ON"
+        EnableTracking()
+    else
+        trackingBtn.Text = "Tracking: OFF"
+        DisableTracking()
+    end
+end)
